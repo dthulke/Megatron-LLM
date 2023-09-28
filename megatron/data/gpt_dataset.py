@@ -294,7 +294,8 @@ def _build_index_mappings(name, data_prefix, documents, sizes,
     shuffle_idx_filename = _filename + '_shuffle_idx.npy'
 
     # Build the indexed mapping if not exist.
-    if torch.distributed.get_rank() == 0:
+    no_shared_fs = True  # TODO: Create config arg
+    if (torch.distributed.get_rank() == 0 or no_shared_fs):
         if (not os.path.isfile(doc_idx_filename)) or \
            (not os.path.isfile(sample_idx_filename)) or \
            (not os.path.isfile(shuffle_idx_filename)):
