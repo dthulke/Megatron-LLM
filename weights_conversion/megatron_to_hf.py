@@ -395,6 +395,8 @@ def write_tokenizer(args: Namespace):
         additional_special_tokens = hf_tokenizer.additional_special_tokens
         special_tokens = {"additional_special_tokens": additional_special_tokens}
         if args.vocab_extra_ids_list:
+            for extra_token in args.vocab_extra_ids_list.split(","):
+                hf_tokenizer.add_tokens(extra_token, special_tokens=True)
             additional_special_tokens.extend(args.vocab_extra_ids_list.split(","))
 
         hf_tokenizer.add_special_tokens(special_tokens_dict=special_tokens, replace_additional_special_tokens=True)
