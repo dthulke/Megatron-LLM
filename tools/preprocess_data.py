@@ -83,7 +83,7 @@ def get_args():
     parser = argparse.ArgumentParser()
     group = parser.add_argument_group(title='input data')
     group.add_argument('--input', type=str, required=True,
-                       help='Path to input JSON')
+                       help='Path to input JSONL (supports gzip, zstandard compression, or uncompressed)')
     group.add_argument('--json_keys', nargs='+', default=['text'],
                        help='space separate listed of keys to extract from json')
     group.add_argument('--split_sentences', action='store_true',
@@ -142,7 +142,15 @@ def main():
     startup_start = time.time()
 
     print("Opening", args.input)
-    fin = open(args.input, 'r', encoding='utf-8')
+    open_func = open
+    if args.input.endswith('.gz'):
+        import gzip
+        open_func = gzip.open
+    elif args.input.endswith('.zst'):
+        import zstandard
+        open_func = zstandard.open
+
+    fin = open_func(args.input, 'rt', encoding='utf-8')
 
     if nltk_available and args.split_sentences:
         nltk.download("punkt", quiet=True)
