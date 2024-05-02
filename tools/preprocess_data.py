@@ -94,7 +94,7 @@ def get_args():
     group = parser.add_argument_group(title='tokenizer')
     group.add_argument('--tokenizer_type', type=str, required=True,
                        choices=['BertWordPieceLowerCase','BertWordPieceCase',
-                                'GPT2BPETokenizer', 'SentencePieceTokenizer', 'FalconTokenizer'],
+                                'GPT2BPETokenizer', 'SentencePieceTokenizer', 'FalconTokenizer', 'TikTokenTokenizer'],
                        help='What type of tokenizer to use.')
     group.add_argument('--vocab_file', type=str, default=None,
                        help='Path to the vocab file')
@@ -119,6 +119,8 @@ def get_args():
     group.add_argument('--vocab_extra_ids', type=int, default=0)
     group.add_argument('--vocab_extra_ids_list', type=str, default=None,
                        help='comma separated list of special vocab ids to add to the tokenizer')
+    group.add_argument('--vocab_extra_ids_path', type=str, default=None,
+                       help='Path to HuggingFace tokenizer_config.json')
     group.add_argument("--no_new_tokens", action="store_false", dest="new_tokens",
                        help=("Whether to add special tokens (e.g. CLS, MASK, etc) "
                              "in the sentenciepiece tokenizer or not"))
