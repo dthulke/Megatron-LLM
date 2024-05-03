@@ -752,11 +752,9 @@ class _TikTokenTokenizer(AbstractTokenizer):
     def bos(self):
         return self._bos_id
 
-    # @property
-    # def eod(self):
-    #     if self._eod_id is not None:
-    #         return self._eod_id
-    #     return self._eos_id  # in case noe eod we can patch this up with an eos
+    @property
+    def eod(self):
+        return self.eos
 
     # @property
     # def eos_token_id(self):

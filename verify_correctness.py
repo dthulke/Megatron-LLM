@@ -78,6 +78,11 @@ def hf_provider(name: str, cache_dir: Optional[Path], device: str,
             f"meta-llama/Llama-2-{size}b-hf", cache_dir=cache_dir,
             **extra_kwargs
         )
+    elif name == "llama3":
+        model = LlamaForCausalLM.from_pretrained(
+            f"meta-llama/Meta-Llama-3-{size}B", cache_dir=cache_dir,
+            **extra_kwargs
+        )
     elif name == "mistral":
         assert size == 7, "Mistral only supports 7B model"
         try:
@@ -95,7 +100,7 @@ def hf_provider(name: str, cache_dir: Optional[Path], device: str,
 
 
 def hf_our_provider(name: str, data_dir: Path, device: str, size: int = 7):
-    if name in {"llama", "llama2"}:
+    if name in {"llama", "llama2", "llama3"}:
         model = LlamaForCausalLM.from_pretrained(data_dir)
     else:
         raise NotImplementedError("Testing custom checkpoints supported for llama")
