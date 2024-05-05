@@ -310,14 +310,22 @@ class ParallelAttention(MegatronModule):
                                                           'self-attention for now')
             assert self.attn_mask_type == AttnMaskType.causal, ('FlashAttention code path only '
                                                                 'supports causal mask for now')
-            # If sliding window is enabled, we need to make sure that the sliding window is supported.
-            if self.sliding_window_size is not None:
-                import inspect
-                # https://github.com/huggingface/transformers/blob/7e1eff7600085814eac65876d4d8a0e38c2f6ccc/src/transformers/models/mistral/modeling_mistral.py#L50C5-L50C32
-                assert "window_size" in list(inspect.signature(
-                    flash_attn.flash_attn_func
-                ).parameters), "The current flash attention version does not support sliding window attention, please update to the latest version."
-                assert self.use_flash_attn, "Sliding window attention is only supported with flash attention for now."
+        # If sliding window is enabled, we need to make sure that the sliding window is supported.
+        if self.sliding_window_size is not None:
+            import inspect
+            # https://github.com/huggingface/transformers/blob/7e1eff7600085814eac65876d4d8a0e38c2f6ccc/src/transformers/models/mistral/modeling_mistral.py#L50C5-L50C32
+            assert "window_size" in list(inspect.signature(
+                flash_attn.flash_attn_func
+            ).parameters), "The current flash attention version does not support sliding window attention, please update to the latest version."
+            assert self.use_flash_attn, "Sliding window attention is only supported with flash attention for now."
+
+        self.use_xformers_attn = args.use_xformers_attn
+        if self.use_xformers_attn:
+            assert not self.use_flash_attn, "Either flash or xformers attention"
+            assert attention_type == AttnType.self_attn, ('xformers attention code path only supports '
+                                                          'self-attention for now')
+            assert self.attn_mask_type == AttnMaskType.causal, ('xformers attention code path only '
+                                                                'supports causal mask for now')
 
         projection_size = args.kv_channels * args.num_attention_heads
 
@@ -367,6 +375,9 @@ class ParallelAttention(MegatronModule):
 
         if self.use_flash_attn:
             self.core_attention_flash = flash_attn.flash_attn_func
+        if self.use_xformers_attn:
+            import xformers.ops.fmha as xformers
+            self.core_attention_xformers = xformers.memory_efficient_attention
 
         # Output.
         self.dense = megatron.core.tensor_parallel.RowParallelLinear(
@@ -514,14 +525,14 @@ class ParallelAttention(MegatronModule):
         # core attention computation
         # ==================================
 
-        if not self.use_flash_attn:
+        if not self.use_flash_attn and not self.use_xformers_attn:
             if self.checkpoint_core_attention:
                 context_layer = self._checkpointed_attention_forward(
                     query_layer, key_layer, value_layer, attention_mask)
             else:
                 context_layer = self.core_attention(
                     query_layer, key_layer, value_layer, attention_mask)
-        else:
+        elif self.use_flash_attn:
             flash_attn_extra_kwargs = {}
             # check if we need to use sliding window attention
             # https://github.com/huggingface/transformers/blob/7ee995fd9c692761c4601ddbffa2ac2ec9f27b0b/src/transformers/models/mistral/modeling_mistral.py#L353
@@ -551,7 +562,48 @@ class ParallelAttention(MegatronModule):
                     **flash_attn_extra_kwargs
                 )
             context_layer = rearrange(context_layer, 'b s n h -> s b (n h)').contiguous()
+        else:
+            assert self.use_xformers_attn
+            assert self.sliding_window_size is None
 
+            q, k, v = [rearrange(x, "s b n h -> b s n h").contiguous()
+                    for x in (query_layer, key_layer, value_layer)]
+
+            bsz = q.shape[0]
+            q_heads = q.shape[2]
+            k_heads = k.shape[2]
+            v_heads = v.shape[2]
+            head_dim = q.shape[3]
+
+            assert k_heads == v_heads
+            n_kv_heads = k_heads
+            n_groups = q_heads // k_heads
+
+            # Ungroup Group query attention
+            if n_groups != 1:
+                kv_seq_len = key_layer.shape[0]
+                k = k.view(bsz, kv_seq_len, n_kv_heads, 1, head_dim)
+                v = v.view(bsz, kv_seq_len, n_kv_heads, 1, head_dim)
+                k = k.expand(bsz, kv_seq_len, n_kv_heads, n_groups, head_dim)
+                v = v.expand(bsz, kv_seq_len, n_kv_heads, n_groups, head_dim)
+                if hidden_states.requires_grad:
+                    k = k.reshape(bsz, kv_seq_len, n_heads, head_dim)
+                    v = v.reshape(bsz, kv_seq_len, n_heads, head_dim)
+                else:
+                    q = q.view(bsz, q_len, n_kv_heads, n_groups, head_dim)
+
+            assert bsz == 1  # Currently only micro_bsz == 1 supported
+
+            from xformers.ops.fmha.attn_bias import AttentionBias
+            assert isinstance(attention_mask, AttentionBias)
+            causal_mask = attention_mask
+
+            if not self.sequence_parallel:
+                with megatron.core.tensor_parallel.get_cuda_rng_tracker().fork():
+                    context_layer = self.core_attention_xformers(q, k, v, attn_bias=causal_mask)
+            else:
+                context_layer = self.core_attention_xformers(q, k, v, attn_bias=causal_mask)
+            context_layer = rearrange(context_layer, 'b s n h -> s b (n h)').contiguous()
         # =================
         # Output. [sq, b, h]
         # =================

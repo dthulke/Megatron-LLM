@@ -138,7 +138,10 @@ def get_ltor_masks_and_position_ids(data,
                                     eod_token,
                                     reset_position_ids,
                                     reset_attention_mask,
-                                    eod_mask_loss):
+                                    eod_mask_loss,
+                                    use_xformers_attn=False,
+                                    block_sparse_attention_mask=False,
+                                    ):
     """Build masks and position id for left to right model."""
 
     # Extract batch size and sequence length.
@@ -149,9 +152,28 @@ def get_ltor_masks_and_position_ids(data,
         att_mask_batch = micro_batch_size
     else:
         att_mask_batch = 1
-    attention_mask = torch.tril(torch.ones(
-        (att_mask_batch, seq_length, seq_length), device=data.device)).view(
-            att_mask_batch, 1, seq_length, seq_length)
+
+    if not use_xformers_attn:
+        assert not use_block_sparse_attention_mask
+        attention_mask = torch.tril(torch.ones(
+            (att_mask_batch, seq_length, seq_length), device=data.device)).view(
+                att_mask_batch, 1, seq_length, seq_length)
+    else:
+        from xformers.ops.fmha.attn_bias import LowerTriangularMask, BlockDiagonalMask
+        if use_block_sparse_attention_mask:
+            attention_mask = LowerTriangularMask()
+        else:
+            # A bit hacky, check for a better way
+            assert micro_batch_size == 1
+            eod_idx = torch.where(data == eod_token)[1].numpy()
+            if len(eod_idx) == 0:
+                seq_lengths = [seq_length]
+            else:
+                seq_lengths = [eod_idx[0] + 1] + (eod_idx[1:] - eod_idx[:-1]).tolist()
+                total_length = sum(seq_lengths)
+                if total_length < seq_length:
+                    seq_lengths += [seq_length - total_length]
+            attention_mask = BlockDiagonalMask.from_seqlens(seq_lengths)
 
     # Loss mask.
     loss_mask = torch.ones(data.size(), dtype=torch.float, device=data.device)

@@ -678,6 +678,10 @@ def _add_training_args(parser):
     group.add_argument('--use_flash_attn', action='store_true',
                        help='use FlashAttention implementation of attention. '
                        'https://arxiv.org/abs/2205.14135')
+    group.add_argument('--use_xformers_attn', action='store_true',
+                       help='use xformers attention implementation of attention.')
+    group.add_argument('--use_block_sparse_attention_mask', action='store_true',
+                       help='mask attention across document boundaries - only supported with xformers attn.')
     group.add_argument('--optimizer', type=str, default='adam',
                        choices=['adam', 'sgd'],
                        help='Optimizer function')
