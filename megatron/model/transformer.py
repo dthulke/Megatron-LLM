@@ -295,6 +295,9 @@ class ParallelAttention(MegatronModule):
         super(ParallelAttention, self).__init__()
         assert world_size is not None
 
+        if args.use_block_sparse_attention_mask:
+            attn_mask_type = AttnMaskType.custom
+
         self.layer_number = max(1, layer_number)
         self.attention_type = attention_type
         self.attn_mask_type = attn_mask_type

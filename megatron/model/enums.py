@@ -21,6 +21,7 @@ class AttnType(enum.Enum):
 class AttnMaskType(enum.Enum):
     padding = 1
     causal = 2
+    custom = 3
 
 
 class PositionEmbeddingType(enum.Enum):
