@@ -327,8 +327,8 @@ class ParallelAttention(MegatronModule):
             assert not self.use_flash_attn, "Either flash or xformers attention"
             assert attention_type == AttnType.self_attn, ('xformers attention code path only supports '
                                                           'self-attention for now')
-            assert self.attn_mask_type == AttnMaskType.causal, ('xformers attention code path only '
-                                                                'supports causal mask for now')
+            assert self.attn_mask_type != AttnMaskType.padding, ('xformers attention code path only '
+                                                                'supports causal or custom mask for now')
 
         projection_size = args.kv_channels * args.num_attention_heads
 
