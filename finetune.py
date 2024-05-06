@@ -153,8 +153,9 @@ def get_batch(data_iterator):
             args.reset_position_ids,
             args.reset_attention_mask,
             args.eod_mask_loss,
+            tokenizer.bos,
             args.use_xformers_attn,
-            args.block_sparse_attention_mask,
+            args.use_block_sparse_attention_mask,
         )
         return tokens, labels, loss_mask, attention_mask, position_ids
 

@@ -133,14 +133,41 @@ def check_adlr_autoresume_termination(iteration,
         print_rank_0(">>> training terminated. Returning")
         sys.exit(0)
 
+def get_lengths_with_eod_token(data, eod_token):
+    micro_batch_size, seq_length = data.size()
+    eod_idx = torch.where(data == eod_token)[1].cpu().numpy()
+    if len(eod_idx) == 0:
+        seq_lengths = [seq_length]
+    else:
+        seq_lengths = [eod_idx[0] + 1] + (eod_idx[1:] - eod_idx[:-1]).tolist()
+        total_length = sum(seq_lengths)
+        if total_length < seq_length:
+            seq_lengths += [seq_length - total_length]
+    return seq_lengths
+
+def get_lengths_with_bos_token(data, bos_token):
+    micro_batch_size, seq_length = data.size()
+    eod_idx = torch.where(data == bos_token)[1].cpu().numpy()
+    if len(eod_idx) == 0:
+        seq_lengths = [seq_length]
+    else:
+        seq_lengths = []
+        if eod_idx[0] > 0:
+            seq_lengths.append(eod_idx[0])
+        seq_lengths += (eod_idx[1:] - eod_idx[:-1]).tolist()
+        total_length = sum(seq_lengths)
+        if total_length < seq_length:
+            seq_lengths += [seq_length - total_length]
+    return seq_lengths
 
 def get_ltor_masks_and_position_ids(data,
                                     eod_token,
                                     reset_position_ids,
                                     reset_attention_mask,
                                     eod_mask_loss,
+                                    bos_token=None,
                                     use_xformers_attn=False,
-                                    block_sparse_attention_mask=False,
+                                    use_block_sparse_attention_mask=False,
                                     ):
     """Build masks and position id for left to right model."""
 
@@ -154,26 +181,26 @@ def get_ltor_masks_and_position_ids(data,
         att_mask_batch = 1
 
     if not use_xformers_attn:
-        assert not use_block_sparse_attention_mask
-        attention_mask = torch.tril(torch.ones(
-            (att_mask_batch, seq_length, seq_length), device=data.device)).view(
+        if not use_block_sparse_attention_mask:
+            attention_mask = torch.tril(torch.ones(
+                (att_mask_batch, seq_length, seq_length), device=data.device)).view(
+                    att_mask_batch, 1, seq_length, seq_length)
+        else:
+            assert micro_batch_size == 1
+            assert bos_token is not None
+            seq_lengths = get_lengths_with_bos_token(data, bos_token)
+            attention_mask = torch.tril(torch.block_diag(*[torch.ones((s, s), device=data.device) for s in seq_lengths])).view(
                 att_mask_batch, 1, seq_length, seq_length)
     else:
-        from xformers.ops.fmha.attn_bias import LowerTriangularMask, BlockDiagonalMask
-        if use_block_sparse_attention_mask:
+        from xformers.ops.fmha.attn_bias import LowerTriangularMask, BlockDiagonalCausalMask
+        if not use_block_sparse_attention_mask:
             attention_mask = LowerTriangularMask()
         else:
             # A bit hacky, check for a better way
             assert micro_batch_size == 1
-            eod_idx = torch.where(data == eod_token)[1].numpy()
-            if len(eod_idx) == 0:
-                seq_lengths = [seq_length]
-            else:
-                seq_lengths = [eod_idx[0] + 1] + (eod_idx[1:] - eod_idx[:-1]).tolist()
-                total_length = sum(seq_lengths)
-                if total_length < seq_length:
-                    seq_lengths += [seq_length - total_length]
-            attention_mask = BlockDiagonalMask.from_seqlens(seq_lengths)
+            assert bos_token is not None
+            seq_lengths = get_lengths_with_bos_token(data, bos_token)
+            attention_mask = BlockDiagonalCausalMask.from_seqlens(seq_lengths)
 
     # Loss mask.
     loss_mask = torch.ones(data.size(), dtype=torch.float, device=data.device)
@@ -211,7 +238,8 @@ def get_ltor_masks_and_position_ids(data,
                     prev_index = i + 1
 
     # Convert attention mask to binary:
-    attention_mask = (attention_mask < 0.5)
+    if isinstance(attention_mask, torch.Tensor):
+        attention_mask = (attention_mask < 0.5)
 
     return attention_mask, loss_mask, position_ids
 
