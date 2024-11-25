@@ -50,11 +50,11 @@ from utils.permute_qkv import permute_qkv
 from utils.merge_llama import merge_llama
 
 
-llama_s2layer = {7: 32, 8: 32, 13: 40, 30: 60, 34: 48, 65: 80, 70: 80}
-llama_s2heads = {7: 32, 8: 32, 13: 40, 30: 52, 34: 64, 65: 64, 70: 64}
-llama_s2dense = {7: 11008, 8: 14336, 13: 13824, 30: 17920, 34: 22016, 65: 22016,
+llama_s2layer = {1: 16, 3: 28, 7: 32, 8: 32, 13: 40, 30: 60, 34: 48, 65: 80, 70: 80}
+llama_s2heads = {1: 32, 3: 24, 7: 32, 8: 32, 13: 40, 30: 52, 34: 64, 65: 64, 70: 64}
+llama_s2dense = {1: 8192, 3: 8192, 7: 11008, 8: 14336, 13: 13824, 30: 17920, 34: 22016, 65: 22016,
                  70: 28672}  # should be (2/3)*4*d, but it isn't exaclty that
-llama_s2hidden = {7: 4096, 8: 4096, 13: 5120, 30: 6656, 34: 8192, 65: 8192, 70: 8192}
+llama_s2hidden = {1: 2048, 3: 3072, 7: 4096, 8: 4096, 13: 5120, 30: 6656, 34: 8192, 65: 8192, 70: 8192}
 
 
 def falcon_to_megatron(weights: dict, size: int) -> dict:
@@ -452,7 +452,7 @@ if __name__ == "__main__":
     parser = ArgumentParser(description="Convert Huggingface llama or falcon weights to "
                                         "megatron-compatible weights")
     parser.add_argument("model", choices={"falcon", "llama", "llama2", "codellama", "mistral", "llama3"})
-    parser.add_argument("--size", default=7, choices={7, 8, 13, 30, 34, 40, 65, 70}, type=int,
+    parser.add_argument("--size", default=7, choices={1, 3, 7, 8, 13, 30, 34, 40, 65, 70}, type=int,
                         help="The size of the model")
     parser.add_argument("--out", type=Path,
                         help="Directory to store the megatron weights (as checkpoint)")
@@ -474,6 +474,6 @@ if __name__ == "__main__":
     elif args.model == "mistral":
         assert args.size in {7}
     else:
-        assert args.size in {7, 8, 13, 70}
+        assert args.size in {1, 3, 7, 8, 13, 70}
 
     main(args.model, args.size, args.out, args.cache_dir, args.model_path)
